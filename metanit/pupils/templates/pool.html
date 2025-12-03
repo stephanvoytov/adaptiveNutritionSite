@@ -1,13 +1,10 @@
-<!DOCTYPE html>
-<html lang="ru" data-theme="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Выбор завтраков</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-</head>
-<body>
-<main class="container">
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Выбор завтраков{% endblock %}
+
+{% block content %}
+
     <article>
         <hgroup>
             <h1>🍽️ Выбор завтраков</h1>
@@ -88,6 +85,4 @@
         </form>
         {% endif %}
     </article>
-</main>
-</body>
-</html>
+{% endblock %}

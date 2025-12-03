@@ -107,3 +107,7 @@ def pooling(request: HttpRequest):
         }
 
         return render(request, 'pool.html', context)
+
+
+def index(request: HttpRequest):
+    return render(request, 'index.html')
