@@ -1,3 +1,5 @@
+import urllib
+
 from django.shortcuts import render
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill
@@ -9,6 +11,12 @@ from openpyxl.utils import get_column_letter
 from .models import Class, Pupil, Dish, DailyMenu, WeeklyBreakfasts
 
 
+@admin.register(Class)
+class ClassAdmin(admin.ModelAdmin):
+    list_display = ['name', 'number_of_pupils']
+    list_filter = ['name']
+
+
 @admin.register(Pupil)
 class PupilAdmin(admin.ModelAdmin):
     list_display = ['last_name', 'first_name', 'class_group']
@@ -18,8 +26,8 @@ class PupilAdmin(admin.ModelAdmin):
 
 @admin.register(Dish)
 class DishAdmin(admin.ModelAdmin):
-    list_display = ['name']
-    search_fields = ['name']
+    list_display = ['name', 'short_name']
+    search_fields = ['name', 'short_name']
 
 
 @admin.register(DailyMenu)
@@ -61,59 +69,16 @@ class WeeklyBreakfastAdmin(admin.ModelAdmin):
 
     def statistics_view(self, request):
         """Кастомная страница статистики"""
-        from django.db.models import Count
         from datetime import datetime, timedelta
 
-        # Получаем текущую неделю
         today = datetime.now().date()
         week_start = today - timedelta(days=today.weekday())
 
-        # Собираем статистику по классам
-        classes_stats = []
-        from .models import Class, Pupil, WeeklyBreakfasts
-
-        for class_obj in Class.objects.all():
-            # Всего учеников в классе
-            total_pupils = Pupil.objects.filter(class_group=class_obj).count()
-
-            # Статистика по дням
-            day_stats = {}
-            days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
-
-            for day in days:
-                # Выборы по этому дню
-                choices = WeeklyBreakfasts.objects.filter(
-                    week_start_date=week_start,
-                    pupil__class_group=class_obj
-                ).exclude(**{f"{day}__isnull": True})
-
-                # Подсчет по блюдам
-                dish_counts = choices.values(
-                    f'{day}__name'
-                ).annotate(
-                    count=Count('id')
-                ).order_by('-count')
-
-                # Формируем статистику как в Excel
-                dish_stats = {}
-                for item in dish_counts:
-                    dish_stats[item[f'{day}__name']] = item['count']
-
-                day_stats[day] = {
-                    'dishes': dish_stats,
-                    'not_chosen': total_pupils - choices.count(),
-                    'chosen': choices.count()
-                }
-
-            classes_stats.append({
-                'class': class_obj,
-                'total_pupils': total_pupils,
-                'day_stats': day_stats
-            })
+        stats_data = get_weekly_statistics(week_start)
 
         context = {
             'title': f'Статистика завтраков на неделю с {week_start} по {week_start + timedelta(days=4)}',
-            'classes_stats': classes_stats,
+            'classes_stats': stats_data['classes_stats'],
             'week_start': week_start,
         }
 
@@ -127,18 +92,19 @@ class WeeklyBreakfastAdmin(admin.ModelAdmin):
 
     def export_to_excel(self, request):
         """Экспорт с листами статистики и листами учеников"""
-        from django.db.models import Count
         from .models import Class, Pupil, WeeklyBreakfasts
+        from datetime import datetime, timedelta
 
-        # Получаем текущую неделю
+        from openpyxl.styles import PatternFill
+
+        not_chosen_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")
+        chosen_style = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")
+
         today = datetime.now().date()
         week_start = today - timedelta(days=today.weekday())
-        week_end = week_start + timedelta(days=4)
 
         # Создаем Excel книгу
         wb = openpyxl.Workbook()
-
-        # Удаляем дефолтный лист
         wb.remove(wb.active)
 
         # Стили
@@ -146,18 +112,21 @@ class WeeklyBreakfastAdmin(admin.ModelAdmin):
         bold_font = Font(bold=True)
         center_align = Alignment(horizontal='center')
 
-        # ЛИСТ СТАТИСТИКИ (как у нас было)
+        # 1.\
+        stats_data = get_weekly_statistics(week_start)
         ws_stats = wb.create_sheet(title="Статистика")
 
         # Заголовок статистики
         ws_stats.merge_cells('A1:E1')
-        ws_stats['A1'] = f'Статистика завтраков с {week_start} по {week_end}'
+        ws_stats['A1'] = f'Статистика завтраков с {week_start} по {stats_data["week_end"]}'
         ws_stats['A1'].font = Font(bold=True, size=14)
         ws_stats['A1'].alignment = center_align
 
         row = 3
 
-        for class_obj in Class.objects.all().order_by('name'):
+        for class_stat in stats_data['classes_stats']:
+            class_obj = class_stat['class']
+
             # Заголовок класса
             ws_stats.merge_cells(f'A{row}:E{row}')
             ws_stats[f'A{row}'] = f'Класс: {class_obj.name}'
@@ -165,8 +134,7 @@ class WeeklyBreakfastAdmin(admin.ModelAdmin):
             row += 1
 
             # Всего учеников
-            total_pupils = Pupil.objects.filter(class_group=class_obj).count()
-            ws_stats[f'A{row}'] = f'Всего учеников: {total_pupils}'
+            ws_stats[f'A{row}'] = f'Всего учеников: {class_stat["total_pupils"]}'
             row += 1
 
             # Заголовки таблицы
@@ -188,39 +156,25 @@ class WeeklyBreakfastAdmin(admin.ModelAdmin):
             }
 
             for day_field, day_name in days_mapping.items():
-                # Выборы по этому дню
-                choices = WeeklyBreakfasts.objects.filter(
-                    week_start_date=week_start,
-                    pupil__class_group=class_obj
-                ).exclude(**{f"{day_field}__isnull": True})
+                day_data = class_stat['day_stats'][day_field]
+                dishes_list = list(day_data['dishes'].items())
 
-                # Подсчет по блюдам
-                dish_counts = choices.values(
-                    f'{day_field}__name'
-                ).annotate(count=Count('id')).order_by('-count')
-
-                # Формируем данные
-                dishes_list = list(dish_counts)
-                option1 = f"{dishes_list[0][f'{day_field}__name']}: {dishes_list[0]['count']}" if dishes_list else "-"
-                option2 = f"{dishes_list[1][f'{day_field}__name']}: {dishes_list[1]['count']}" if len(
-                    dishes_list) > 1 else "-"
-
-                not_chosen = total_pupils - choices.count()
-                chosen = choices.count()
+                option1 = f"{dishes_list[0][0]}: {dishes_list[0][1]}" if dishes_list else "-"
+                option2 = f"{dishes_list[1][0]}: {dishes_list[1][1]}" if len(dishes_list) > 1 else "-"
 
                 # Записываем строку
                 ws_stats.cell(row=row, column=1, value=day_name)
                 ws_stats.cell(row=row, column=2, value=option1)
                 ws_stats.cell(row=row, column=3, value=option2)
-                ws_stats.cell(row=row, column=4, value=not_chosen)
-                ws_stats.cell(row=row, column=5, value=chosen)
+                ws_stats.cell(row=row, column=4, value=day_data['not_chosen'])
+                ws_stats.cell(row=row, column=5, value=day_data['chosen'])
 
                 row += 1
 
             # Пустая строка между классами
             row += 2
 
-        # ЛИСТЫ С УЧЕНИКАМИ (добавляем для каждого класса)
+        # 2. ЛИСТЫ С УЧЕНИКАМИ
         for class_obj in Class.objects.all().order_by('name'):
             ws_pupils = wb.create_sheet(title=f"Ученики {class_obj.name}")
 
@@ -239,7 +193,7 @@ class WeeklyBreakfastAdmin(admin.ModelAdmin):
 
             # Данные учеников
             pupils = Pupil.objects.filter(class_group=class_obj).order_by('last_name', 'first_name')
-            row = 4
+            row_pupil = 4
 
             for pupil in pupils:
                 try:
@@ -248,29 +202,29 @@ class WeeklyBreakfastAdmin(admin.ModelAdmin):
                     breakfast = None
 
                 # Данные ученика
-                ws_pupils.cell(row=row, column=1, value=pupil.last_name)
-                ws_pupils.cell(row=row, column=2, value=pupil.first_name)
-                ws_pupils.cell(row=row, column=3, value=class_obj.name)
+                ws_pupils.cell(row=row_pupil, column=1, value=pupil.last_name)
+                ws_pupils.cell(row=row_pupil, column=2, value=pupil.first_name)
+                ws_pupils.cell(row=row_pupil, column=3, value=class_obj.name)
 
-                # Выборы по дням
                 days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
-                day_names = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница']
-
-                for col, (day_field, day_name) in enumerate(zip(days, day_names), 4):
+                for col, day_field in enumerate(days, 4):
+                    cell = ws_pupils.cell(row=row_pupil, column=col)
                     if breakfast and getattr(breakfast, day_field):
-                        ws_pupils.cell(row=row, column=col, value=getattr(breakfast, day_field).name)
+                        cell.fill = chosen_style
+                        cell.value = getattr(breakfast, day_field).short_name
                     else:
-                        ws_pupils.cell(row=row, column=col, value="Не выбрано")
+                        cell.fill = not_chosen_fill
+                        cell.value = "Не выбрано"
 
-                row += 1
+                row_pupil += 1
 
             # Настраиваем ширину колонок
-            column_widths = [15, 15, 10, 30, 30, 30, 30, 30]
+            column_widths = [15, 15, 10, 20, 20, 20, 20, 20]
             for i, width in enumerate(column_widths, 1):
                 ws_pupils.column_dimensions[get_column_letter(i)].width = width
 
         # Настраиваем ширину колонок для листа статистики
-        stats_widths = [15, 30, 30, 12, 12]
+        stats_widths = [15, 25, 25, 12, 12]
         for i, width in enumerate(stats_widths, 1):
             ws_stats.column_dimensions[get_column_letter(i)].width = width
 
@@ -278,8 +232,59 @@ class WeeklyBreakfastAdmin(admin.ModelAdmin):
         response = HttpResponse(
             content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         )
-        filename = f'завтраки_статистика_{week_start}.xlsx'
-        response['Content-Disposition'] = f'attachment; filename={filename}'
+        filename = f'завтраки_{week_start}.xlsx'
+        response['Content-Disposition'] = f"attachment; filename*=UTF-8''{urllib.parse.quote(filename)}"
 
         wb.save(response)
         return response
+
+
+def get_weekly_statistics(week_start=None):
+    """Общая функция для получения статистики за неделю"""
+    from django.db.models import Count
+    from datetime import datetime, timedelta
+
+    if week_start is None:
+        today = datetime.now().date()
+        week_start = today - timedelta(days=today.weekday())
+
+    from .models import Class, WeeklyBreakfasts
+
+    classes_stats = []
+
+    for class_obj in Class.objects.all():
+        total_pupils = class_obj.number_of_pupils
+        day_stats = {}
+        days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
+
+        for day in days:
+            choices = WeeklyBreakfasts.objects.filter(
+                week_start_date=week_start,
+                pupil__class_group=class_obj
+            ).exclude(**{f"{day}__isnull": True})
+
+            dish_counts = choices.values(
+                f'{day}__short_name'
+            ).annotate(count=Count('id')).order_by('-count')
+
+            dish_stats = {}
+            for item in dish_counts:
+                dish_stats[item[f'{day}__short_name']] = item['count']
+
+            day_stats[day] = {
+                'dishes': dish_stats,
+                'not_chosen': total_pupils - choices.count(),
+                'chosen': choices.count()
+            }
+
+        classes_stats.append({
+            'class': class_obj,
+            'total_pupils': total_pupils,
+            'day_stats': day_stats
+        })
+
+    return {
+        'classes_stats': classes_stats,
+        'week_start': week_start,
+        'week_end': week_start + timedelta(days=4)
+    }

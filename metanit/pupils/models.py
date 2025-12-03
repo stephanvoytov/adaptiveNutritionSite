@@ -4,13 +4,14 @@ from django.utils.translation import gettext_lazy as _
 
 class Class(models.Model):
     name = models.CharField(max_length=10, verbose_name='Название класса')
+    number_of_pupils = models.IntegerField(verbose_name='Количество учеников')
 
     class Meta:
-        verbose_name = _('Название класса')
-        verbose_name_plural = _('Названия классов')
+        verbose_name = _('Класс')
+        verbose_name_plural = _('Классы')
 
     def __str__(self):
-        return self.name
+        return f"{self.name}"
 
 
 class Pupil(models.Model):
@@ -27,14 +28,15 @@ class Pupil(models.Model):
 
 
 class Dish(models.Model):
-    name = models.CharField(max_length=100, verbose_name='Название блюда')
+    short_name = models.CharField(max_length=100, verbose_name='Короткое название блюда')
+    name = models.CharField(max_length=100, verbose_name='Название блюда', default='')
 
     class Meta:
         verbose_name = _('Завтрак')
         verbose_name_plural = _('Завтраки')
 
     def __str__(self):
-        return self.name
+        return self.short_name
 
 
 class DailyMenu(models.Model):
@@ -75,8 +77,8 @@ class WeeklyBreakfasts(models.Model):
     week_start_date = models.DateField(verbose_name='Дата начала недели')
 
     class Meta:
-        verbose_name = _('Еженедельные выборы')
-        verbose_name_plural = _('Еженедельный выбор')
+        verbose_name = _('Выбор завтрака на неделю')
+        verbose_name_plural = _('Все выборы завтрака на неделю')
 
     def __str__(self):
         return f"{self.pupil}"
