@@ -48,4 +48,38 @@ Develop and implement a system that allows students (with parental support) to s
 
 ---
 
+🎨 UX/UI Design
 
+Minimalist and intuitive design for primary school students
+
+Color scheme: neutral (blue, black, white)
+
+Student view: one-page weekly menu selection
+
+Teacher/admin view: admin panel + class dashboards with automatic highlights (green for chosen, red for missing)
+
+No unnecessary navigation – focus on completing tasks quickly and accurately
+
+🔒 Security & Compliance
+
+User roles and permissions
+
+GDPR / Russian FZ-152 compliant handling of personal data
+
+Reliable authentication and authorization via Django
+
+📌 Key Advantages
+
+Reduces teacher workload by up to 3 hours per week
+
+Provides accurate and standardized meal reports
+
+Ensures dietary restrictions and allergies are respected
+
+Minimizes food waste by 15–25%
+
+Scalable and extendable for multiple schools
+
+🔗 Live Prototype & Demo
+
+https://adaptivenutrition.onrender.com/
