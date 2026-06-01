@@ -1,4 +1,6 @@
 # Adaptive Nutrition Site
+[![Django](https://img.shields.io/badge/Django-092E20?logo=django)](https://www.djangoproject.com/) [![Stars](https://img.shields.io/github/stars/stephanvoytov/adaptive-nutrition-site)](https://github.com/stephanvoytov/adaptive-nutrition-site/stargazers)
+
 
 **AdaptiveNutritionSite** is a web platform designed to automate school meal selection for primary school students. It reduces teachers' administrative workload and provides the school cafeteria with accurate production data, helping minimize food waste and errors.
 
